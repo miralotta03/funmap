@@ -1,4 +1,5 @@
 // Fallback for using MaterialIcons on Android and web.
+// icon-symbol.tsx — used on Android and web, maps SF Symbol names to Material Icons
 
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
@@ -13,8 +14,13 @@ type IconSymbolName = keyof typeof MAPPING;
  * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
  * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
  */
+// Every time you add a new SF Symbol icon, you must add it here 
+// too so Android knows which Material Icon to use instead. 
 const MAPPING = {
   'house.fill': 'home',
+  'map.fill': 'map',
+  'person.fill': 'person',
+  'square.grid.2x2.fill': 'grid-view',
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',

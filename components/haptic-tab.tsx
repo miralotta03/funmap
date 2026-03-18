@@ -7,6 +7,10 @@ export function HapticTab(props: BottomTabBarButtonProps) {
     <PlatformPressable
       {...props}
       onPressIn={(ev) => {
+        // Only triggers haptic feedback on iOS because 
+        // Android handles haptics differently. 
+        // ImpactFeedbackStyle.Light is the softest 
+        // vibration — there's also Medium and Heavy.
         if (process.env.EXPO_OS === 'ios') {
           // Add a soft haptic feedback when pressing down on the tabs.
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

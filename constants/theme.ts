@@ -8,6 +8,10 @@ import { Platform } from 'react-native';
 const tintColorLight = '#0a7ea4';
 const tintColorDark = '#fff';
 
+// This is what you're accessing when you write Colors[colorScheme].
+// tint anywhere in the app. For your travel app you'll want to change 
+// these colors to match your own brand. For example if you want a green 
+// travel-themed app you'd change tintColorLight to something like '#2D6A4F'.
 export const Colors = {
   light: {
     text: '#11181C',

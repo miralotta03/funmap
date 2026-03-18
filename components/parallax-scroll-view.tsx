@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
+// How tall the header image area is.
 const HEADER_HEIGHT = 250;
 
 type Props = PropsWithChildren<{
@@ -26,7 +27,15 @@ export default function ParallaxScrollView({
   const backgroundColor = useThemeColor({}, 'background');
   const colorScheme = useColorScheme() ?? 'light';
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  // Tracks how far the user has scrolled in real time.
   const scrollOffset = useScrollOffset(scrollRef);
+  // This is the parallax magic. interpolate maps the scroll 
+  // position to a slower movement of the header — so when 
+  // you scroll down 250px, the header only moves 187px, 
+  // creating the depth effect. The header also scales up 
+  // when you pull down (scroll into negative values).
+  // You likely won't need this for your map app since 
+  // the map itself fills the screen.
   const headerAnimatedStyle = useAnimatedStyle(() => {
     return {
       transform: [

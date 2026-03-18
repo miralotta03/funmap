@@ -1,5 +1,6 @@
 import Animated from 'react-native-reanimated';
 
+// good simple example of animation.
 export function HelloWave() {
   return (
     <Animated.Text

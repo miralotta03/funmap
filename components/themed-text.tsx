@@ -1,3 +1,5 @@
+// This is a wrapper around React Native's basic Text that adds two things:
+
 import { StyleSheet, Text, type TextProps } from 'react-native';
 
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -15,8 +17,10 @@ export function ThemedText({
   type = 'default',
   ...rest
 }: ThemedTextProps) {
+  // 1. Automatic dark/light color:
   const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
 
+  // 2. Preset text styles via the type prop:
   return (
     <Text
       style={[
