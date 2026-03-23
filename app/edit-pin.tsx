@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import * as Location from 'expo-location';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -10,9 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
-import * as Location from 'expo-location';
 
 import { supabase } from '@/lib/supabase';
 
@@ -35,14 +35,18 @@ export default function EditPinScreen() {
   }, [id]);
 
   const fetchPin = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { router.replace('/login'); return; }
+
     const { data, error } = await supabase
       .from('pins')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single();
 
-    if (error) {
-      Alert.alert('Error', 'Could not load pin.');
+    if (error || !data) {
+      Alert.alert('Error', 'Pin not found or you do not have permission to edit it.');
       router.back();
       return;
     }
