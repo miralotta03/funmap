@@ -1,6 +1,8 @@
-// app/(tabs)/profile.tsx — Real Supabase version
+// app/(tabs)/profile.tsx — Real Supabase version with follow request bells
+
 
 import { supabase } from '@/lib/supabase';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -63,6 +65,7 @@ export default function ProfileScreen() {
   const [editWebsite, setEditWebsite] = useState('');
   const [editIsPrivate, setEditIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -87,6 +90,62 @@ export default function ProfileScreen() {
     setFollowerCount(followersRes.count ?? 0);
     setFollowingCount(followingRes.count ?? 0);
     setLoading(false);
+  };
+
+  const handlePickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow access to your photo library to change your profile picture.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (result.canceled || !result.assets[0]?.base64) return;
+
+    const image = result.assets[0];
+    setUploadingAvatar(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const fileExt = image.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const filePath = `${user.id}/avatar.${fileExt}`;
+
+      const base64Data = image.base64!;
+      const byteCharacters = atob(base64Data);
+      const byteArray = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArray[i] = byteCharacters.charCodeAt(i);
+      }
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, byteArray, { upsert: true, contentType: `image/${fileExt}` });
+
+      if (uploadError) { Alert.alert('Upload failed', uploadError.message); return; }
+
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+      const { error: updateError } = await supabase
+        .from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+
+      if (updateError) { Alert.alert('Error', updateError.message); return; }
+
+      fetchAll();
+    } catch (e) {
+      Alert.alert('Error', 'Something went wrong uploading your photo.');
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const handleEditOpen = () => {
@@ -194,30 +253,30 @@ export default function ProfileScreen() {
           <View>
             {/* Header */}
             <View style={styles.header}>
-              <View style={styles.headerLeft}>
-                <Text style={styles.headerUsername}>{profile?.username ?? 'Profile'}</Text>
-                {profile?.is_private && (
-                  <View style={styles.privateBadge}>
-                    <Text style={styles.privateBadgeText}>🔒 Private</Text>
-                  </View>
-                )}
-              </View>
-              <TouchableOpacity onPress={handleLogout}>
-                <Text style={styles.logoutBtn}>Log out</Text>
-              </TouchableOpacity>
+              <Text style={styles.headerUsername}>{profile?.username ?? 'Profile'}</Text>
             </View>
 
             {/* Avatar + stats */}
             <View style={styles.profileRow}>
-              <View style={styles.avatar}>
-                {profile?.avatar_url ? (
+              <TouchableOpacity onPress={handlePickAvatar} style={styles.avatarContainer}>
+                {uploadingAvatar ? (
+                  <View style={styles.avatar}>
+                    <ActivityIndicator color="#2D6A4F" />
+                  </View>
+                ) : profile?.avatar_url ? (
                   <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
                 ) : (
-                  <Text style={styles.avatarInitials}>
-                    {(profile?.username ?? '?').slice(0, 2).toUpperCase()}
-                  </Text>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarInitials}>
+                      {(profile?.username ?? '?').slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
                 )}
-              </View>
+                <View style={styles.avatarEditBadge}>
+                  <Text style={styles.avatarEditBadgeText}>+</Text>
+                </View>
+              </TouchableOpacity>
+
               <View style={styles.stats}>
                 <View style={styles.statItem}>
                   <Text style={styles.statNumber}>{pins.length}</Text>
@@ -236,7 +295,7 @@ export default function ProfileScreen() {
                   <Text style={styles.statLabel}>Following</Text>
                 </TouchableOpacity>
               </View>
-            </View>{/* ← closes profileRow */}
+            </View>
 
             {/* Bio + website */}
             <View style={styles.bioSection}>
@@ -295,13 +354,25 @@ export default function ProfileScreen() {
             </View>
 
             <View style={styles.modalAvatarContainer}>
-              <View style={styles.avatarLarge}>
-                <Text style={styles.avatarInitialsLarge}>
-                  {(editUsername ?? '?').slice(0, 2).toUpperCase()}
+              <TouchableOpacity onPress={handlePickAvatar}>
+                {uploadingAvatar ? (
+                  <View style={styles.avatarLarge}>
+                    <ActivityIndicator color="#2D6A4F" />
+                  </View>
+                ) : profile?.avatar_url ? (
+                  <Image source={{ uri: profile.avatar_url }} style={styles.avatarLargeImage} />
+                ) : (
+                  <View style={styles.avatarLarge}>
+                    <Text style={styles.avatarInitialsLarge}>
+                      {(editUsername ?? '?').slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handlePickAvatar}>
+                <Text style={styles.changePhotoText}>
+                  {uploadingAvatar ? 'Uploading...' : 'Change profile photo'}
                 </Text>
-              </View>
-              <TouchableOpacity>
-                <Text style={styles.changePhotoText}>Change profile photo</Text>
               </TouchableOpacity>
             </View>
 
@@ -365,6 +436,10 @@ export default function ProfileScreen() {
                 </View>
               )}
             </View>
+
+            <TouchableOpacity style={styles.logoutSection} onPress={handleLogout}>
+              <Text style={styles.logoutSectionText}>Log out</Text>
+            </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
@@ -376,17 +451,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   listContent: { paddingBottom: 40 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 60, paddingBottom: 12 },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  header: { paddingHorizontal: 16, paddingTop: 60, paddingBottom: 12 },
   headerUsername: { fontSize: 20, fontWeight: '700', color: '#11181C' },
-  privateBadge: { backgroundColor: '#F5F5F5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#E0E0E0' },
-  privateBadgeText: { fontSize: 11, color: '#687076', fontWeight: '600' },
-  logoutBtn: { fontSize: 14, color: '#FF3B30', fontWeight: '600' },
   profileRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12, gap: 24 },
+  avatarContainer: { position: 'relative' },
   avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#D4F0E4', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#A8DFC9' },
   avatarImage: { width: 80, height: 80, borderRadius: 40 },
   avatarInitials: { fontSize: 26, fontWeight: '700', color: '#2D6A4F' },
+  avatarEditBadge: { position: 'absolute', bottom: 0, right: 0, width: 24, height: 24, borderRadius: 12, backgroundColor: '#2D6A4F', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
+  avatarEditBadgeText: { color: '#fff', fontSize: 16, lineHeight: 20, fontWeight: '700' },
   avatarLarge: { width: 96, height: 96, borderRadius: 48, backgroundColor: '#D4F0E4', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#A8DFC9' },
+  avatarLargeImage: { width: 96, height: 96, borderRadius: 48 },
   avatarInitialsLarge: { fontSize: 32, fontWeight: '700', color: '#2D6A4F' },
   stats: { flex: 1, flexDirection: 'row', justifyContent: 'space-around' },
   statItem: { alignItems: 'center' },
@@ -436,4 +511,6 @@ const styles = StyleSheet.create({
   privacyDesc: { fontSize: 13, color: '#687076' },
   privateInfoBox: { backgroundColor: '#F5FAF7', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E0F0E8' },
   privateInfoText: { fontSize: 13, color: '#2D6A4F', lineHeight: 20 },
+  logoutSection: { marginTop: 32, marginBottom: 16, alignItems: 'center', paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: '#FFE5E5', backgroundColor: '#FFF5F5' },
+  logoutSectionText: { fontSize: 15, fontWeight: '600', color: '#FF3B30' },
 });

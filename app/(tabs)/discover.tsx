@@ -31,6 +31,8 @@ export default function DiscoverScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
+  const [isPrivate, setIsPrivate] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -44,6 +46,15 @@ export default function DiscoverScreen() {
     if (!user) return;
     setCurrentUserId(user.id);
 
+    // Fetch own profile (for private status) + pending requests count
+    const [ownProfileRes, pendingRes] = await Promise.all([
+      supabase.from('profiles').select('is_private').eq('id', user.id).single(),
+      supabase.from('followers').select('*', { count: 'exact' }).eq('following_id', user.id).eq('status', 'pending'),
+    ]);
+    const ownIsPrivate = ownProfileRes.data?.is_private ?? false;
+    setIsPrivate(ownIsPrivate);
+    setPendingRequestCount(pendingRes.count ?? 0);
+
     // Fetch all profiles except own
     const { data: profiles } = await supabase
       .from('profiles')
@@ -52,26 +63,41 @@ export default function DiscoverScreen() {
 
     if (!profiles) { setLoading(false); return; }
 
-    // Fetch follower counts, pin counts, and follow status in parallel
-    const enriched = await Promise.all(
-      profiles.map(async (profile) => {
-        const [followersRes, pinsRes, followRes] = await Promise.all([
-          supabase.from('followers').select('*', { count: 'exact' }).eq('following_id', profile.id).eq('status', 'accepted'),
-          supabase.from('pins').select('*', { count: 'exact' }).eq('user_id', profile.id),
-          supabase.from('followers').select('status').eq('follower_id', user.id).eq('following_id', profile.id).single(),
-        ]);
+    const profileIds = profiles.map((p) => p.id);
 
-        const followStatus = followRes.data?.status ?? 'none';
-        return {
-          ...profile,
-          is_private: profile.is_private ?? false,
-          follower_count: followersRes.count ?? 0,
-          pin_count: pinsRes.count ?? 0,
-          is_following: followStatus === 'accepted',
-          follow_status: (followStatus as 'none' | 'pending' | 'accepted'),
-        };
-      })
-    );
+    // 3 bulk queries instead of N×3 per-user queries
+    const [followersRes, pinsRes, myFollowsRes] = await Promise.all([
+      supabase.from('followers').select('following_id').in('following_id', profileIds).eq('status', 'accepted'),
+      supabase.from('pins').select('user_id').in('user_id', profileIds),
+      supabase.from('followers').select('following_id, status').eq('follower_id', user.id).in('following_id', profileIds),
+    ]);
+
+    // Count in JS
+    const followerCountMap: Record<string, number> = {};
+    const pinCountMap: Record<string, number> = {};
+    const followStatusMap: Record<string, string> = {};
+
+    for (const row of followersRes.data ?? []) {
+      followerCountMap[row.following_id] = (followerCountMap[row.following_id] ?? 0) + 1;
+    }
+    for (const row of pinsRes.data ?? []) {
+      pinCountMap[row.user_id] = (pinCountMap[row.user_id] ?? 0) + 1;
+    }
+    for (const row of myFollowsRes.data ?? []) {
+      followStatusMap[row.following_id] = row.status;
+    }
+
+    const enriched = profiles.map((profile) => {
+      const followStatus = followStatusMap[profile.id] ?? 'none';
+      return {
+        ...profile,
+        is_private: profile.is_private ?? false,
+        follower_count: followerCountMap[profile.id] ?? 0,
+        pin_count: pinCountMap[profile.id] ?? 0,
+        is_following: followStatus === 'accepted',
+        follow_status: followStatus as 'none' | 'pending' | 'accepted',
+      };
+    });
 
     setUsers(enriched);
     setLoading(false);
@@ -200,6 +226,7 @@ export default function DiscoverScreen() {
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Discover</Text>
             </View>
+
             <View style={styles.searchContainer}>
               <Text style={styles.searchIcon}>🔍</Text>
               <TextInput
@@ -216,6 +243,28 @@ export default function DiscoverScreen() {
                 </TouchableOpacity>
               )}
             </View>
+            {/* Follow Requests — shown only for private accounts */}
+            {isPrivate && (
+              <TouchableOpacity
+                style={styles.requestsRow}
+                onPress={() => router.push('/follow-requests')}>
+                <View style={styles.requestsIconWrap}>
+                  <Text style={styles.requestsIcon}>👤</Text>
+                </View>
+                <Text style={styles.requestsLabel}>Follow Requests</Text>
+                <View style={styles.requestsRight}>
+                  {pendingRequestCount > 0 && (
+                    <View style={styles.requestsBadge}>
+                      <Text style={styles.requestsBadgeText}>
+                        {pendingRequestCount > 99 ? '99+' : pendingRequestCount}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.requestsChevron}>›</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
             <Text style={styles.sectionTitle}>
               {search.trim() ? `Results for "${search}"` : 'Featured explorers'}
             </Text>
@@ -267,4 +316,12 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48 },
   emptyText: { fontSize: 18, fontWeight: '600', color: '#11181C' },
   emptySubtext: { fontSize: 14, color: '#687076' },
+  requestsRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', gap: 14 },
+  requestsIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#D4F0E4', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#A8DFC9' },
+  requestsIcon: { fontSize: 20 },
+  requestsLabel: { flex: 1, fontSize: 15, fontWeight: '600', color: '#11181C' },
+  requestsRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  requestsBadge: { backgroundColor: '#FF3B30', borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 5 },
+  requestsBadgeText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  requestsChevron: { fontSize: 22, color: '#aaa', lineHeight: 24 },
 });
