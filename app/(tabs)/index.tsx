@@ -1,13 +1,14 @@
-import { router, useFocusEffect } from 'expo-router';
-import { useState, useEffect, useRef, useCallback } from 'react';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
-import { StyleSheet, View, TouchableOpacity, Text, Alert } from 'react-native';
 import * as Location from 'expo-location';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 
 import { supabase } from '@/lib/supabase';
 
 type Pin = {
   id: string;
+  user_id: string;
   title: string;
   description: string;
   location_name: string;
@@ -21,6 +22,7 @@ export default function MapScreen() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -30,7 +32,13 @@ export default function MapScreen() {
 
   useEffect(() => {
     requestLocation();
+    fetchCurrentUser();
   }, []);
+
+  const fetchCurrentUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) setCurrentUserId(user.id);
+  };
 
   const requestLocation = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -115,14 +123,17 @@ export default function MapScreen() {
             </Text>
           ) : null}
 
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => {
-              setSelectedPin(null);
-              router.push({ pathname: '/edit-pin', params: { id: selectedPin.id } });
-            }}>
-            <Text style={styles.editButtonText}>Edit pin</Text>
-          </TouchableOpacity>
+          {/* Only show edit button if this pin belongs to the current user */}
+          {selectedPin.user_id === currentUserId && (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => {
+                setSelectedPin(null);
+                router.push({ pathname: '/edit-pin', params: { id: selectedPin.id } });
+              }}>
+              <Text style={styles.editButtonText}>Edit pin</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 

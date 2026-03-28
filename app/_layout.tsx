@@ -51,12 +51,15 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack initialRouteName="(auth)">
+      <Stack initialRouteName="(auth)" screenOptions={{ contentStyle: { backgroundColor: '#fff' } }}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         <Stack.Screen name="add-pin" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="edit-pin" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="follow-requests" options={{ headerShown: false }} />
+        <Stack.Screen name="user-profile" options={{ headerShown: false }} />
+        <Stack.Screen name="followers" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
