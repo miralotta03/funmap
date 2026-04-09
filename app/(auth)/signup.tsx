@@ -21,7 +21,7 @@ export default function SignupScreen() {
 
   const handleSignup = async () => {
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -31,6 +31,12 @@ export default function SignupScreen() {
     if (error) {
       Alert.alert('Error', error.message);
     } else {
+      if (data.user) {
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          username: username.trim(),
+        });
+      }
       Alert.alert('Success', 'Check your email to confirm your account!');
     }
     setLoading(false);
@@ -52,6 +58,7 @@ export default function SignupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Username"
+            placeholderTextColor="#A0A0A0"
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
@@ -59,6 +66,7 @@ export default function SignupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Email"
+            placeholderTextColor="#A0A0A0"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -67,6 +75,7 @@ export default function SignupScreen() {
           <TextInput
             style={styles.input}
             placeholder="Password"
+            placeholderTextColor="#A0A0A0"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
