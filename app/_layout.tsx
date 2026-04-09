@@ -60,6 +60,8 @@ export default function RootLayout() {
         <Stack.Screen name="follow-requests" options={{ headerShown: false }} />
         <Stack.Screen name="user-profile" options={{ headerShown: false }} />
         <Stack.Screen name="followers" options={{ headerShown: false }} />
+        <Stack.Screen name="create-trip" options={{ headerShown: false }} />
+        <Stack.Screen name="trip-detail" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
