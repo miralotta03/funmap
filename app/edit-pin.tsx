@@ -1,8 +1,10 @@
+import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -24,6 +26,8 @@ export default function EditPinScreen() {
   const [rating, setRating] = useState(0);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [existingImages, setExistingImages] = useState<{ url: string }[]>([]);
+  const [newImages, setNewImages] = useState<{ uri: string; base64: string }[]>([]);
   const [pinLocation, setPinLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -40,7 +44,7 @@ export default function EditPinScreen() {
 
     const { data, error } = await supabase
       .from('pins')
-      .select('*')
+      .select('*, pin_images(url)')
       .eq('id', id)
       .eq('user_id', user.id)
       .single();
@@ -55,6 +59,7 @@ export default function EditPinScreen() {
     setDescription(data.description || '');
     setLocationName(data.location_name || '');
     setRating(data.rating || 0);
+    setExistingImages(data.pin_images ?? []);
     setPinLocation({
       latitude: data.latitude,
       longitude: data.longitude,
@@ -74,6 +79,57 @@ export default function EditPinScreen() {
   const handleMapPress = (e: any) => {
     if (!usingCurrentLocation) {
       setPinLocation(e.nativeEvent.coordinate);
+    }
+  };
+
+  const handlePickImages = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow access to your photo library.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.7,
+      base64: true,
+      selectionLimit: 5,
+    });
+    if (result.canceled) return;
+    const picked = result.assets
+      .filter((a) => a.base64)
+      .map((a) => ({ uri: a.uri, base64: a.base64! }));
+    setNewImages((prev) => [...prev, ...picked].slice(0, 5 - existingImages.length));
+  };
+
+  const handleRemoveExisting = (url: string) => {
+    setExistingImages((prev) => prev.filter((img) => img.url !== url));
+    supabase.from('pin_images').delete().eq('url', url);
+  };
+
+  const handleRemoveNew = (uri: string) => {
+    setNewImages((prev) => prev.filter((img) => img.uri !== uri));
+  };
+
+  const uploadNewImages = async (userId: string) => {
+    for (const img of newImages) {
+      const fileExt = img.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const filePath = `${userId}/${id}/${Date.now()}.${fileExt}`;
+
+      const byteCharacters = atob(img.base64);
+      const byteArray = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArray[i] = byteCharacters.charCodeAt(i);
+      }
+
+      const { error: uploadError } = await supabase.storage
+        .from('pin-images')
+        .upload(filePath, byteArray, { upsert: true, contentType: `image/${fileExt}` });
+
+      if (uploadError) continue;
+
+      const { data: urlData } = supabase.storage.from('pin-images').getPublicUrl(filePath);
+      await supabase.from('pin_images').insert({ pin_id: id, url: urlData.publicUrl });
     }
   };
 
@@ -103,6 +159,8 @@ export default function EditPinScreen() {
     if (error) {
       Alert.alert('Error', error.message);
     } else {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && newImages.length > 0) await uploadNewImages(user.id);
       router.back();
     }
   };
@@ -224,6 +282,36 @@ export default function EditPinScreen() {
             multiline
             numberOfLines={4}
           />
+
+          <Text style={styles.label}>Photos</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoRow}>
+            {existingImages.map((img) => (
+              <View key={img.url} style={styles.photoThumbContainer}>
+                <Image source={{ uri: img.url }} style={styles.photoThumb} />
+                <TouchableOpacity
+                  style={styles.photoRemove}
+                  onPress={() => handleRemoveExisting(img.url)}>
+                  <Text style={styles.photoRemoveText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            {newImages.map((img) => (
+              <View key={img.uri} style={styles.photoThumbContainer}>
+                <Image source={{ uri: img.uri }} style={styles.photoThumb} />
+                <TouchableOpacity
+                  style={styles.photoRemove}
+                  onPress={() => handleRemoveNew(img.uri)}>
+                  <Text style={styles.photoRemoveText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            {existingImages.length + newImages.length < 5 && (
+              <TouchableOpacity style={styles.photoAdd} onPress={handlePickImages}>
+                <Text style={styles.photoAddIcon}>+</Text>
+                <Text style={styles.photoAddText}>Add photo</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
 
           <Text style={styles.label}>Rating</Text>
           <View style={styles.stars}>
@@ -362,6 +450,55 @@ const styles = StyleSheet.create({
   },
   starActive: {
     color: '#FFB800',
+  },
+  photoRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+  },
+  photoThumbContainer: {
+    position: 'relative',
+    marginRight: 8,
+  },
+  photoThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+  },
+  photoRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoRemoveText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  photoAdd: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  photoAddIcon: {
+    fontSize: 24,
+    color: '#2D6A4F',
+    lineHeight: 28,
+  },
+  photoAddText: {
+    fontSize: 11,
+    color: '#687076',
   },
   deleteButton: {
     marginTop: 32,

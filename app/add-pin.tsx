@@ -1,6 +1,10 @@
-import { useState, useEffect } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -9,15 +13,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Dimensions,
 } from 'react-native';
-import { router } from 'expo-router';
-import * as Location from 'expo-location';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 
 import { supabase } from '@/lib/supabase';
-
-const { width } = Dimensions.get('window');
 
 export default function AddPinScreen() {
   const [title, setTitle] = useState('');
@@ -25,6 +24,7 @@ export default function AddPinScreen() {
   const [locationName, setLocationName] = useState('');
   const [rating, setRating] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [images, setImages] = useState<{ uri: string; base64: string }[]>([]);
   const [pinLocation, setPinLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -54,6 +54,57 @@ export default function AddPinScreen() {
     }
   };
 
+  const handlePickImages = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow access to your photo library.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.7,
+      base64: true,
+      selectionLimit: 5,
+    });
+    if (result.canceled) return;
+    const picked = result.assets
+      .filter((a) => a.base64)
+      .map((a) => ({ uri: a.uri, base64: a.base64! }));
+    setImages((prev) => [...prev, ...picked].slice(0, 5));
+  };
+
+  const handleRemoveImage = (uri: string) => {
+    setImages((prev) => prev.filter((img) => img.uri !== uri));
+  };
+
+  const uploadImages = async (pinId: string, userId: string) => {
+    for (const img of images) {
+      const rawExt = img.uri.split('.').pop()?.split('?')[0]?.toLowerCase();
+      const fileExt = ['jpg', 'jpeg', 'png', 'webp', 'heic'].includes(rawExt ?? '') ? rawExt! : 'jpg';
+      const filePath = `${userId}/${pinId}/${Date.now()}.${fileExt}`;
+
+      const byteCharacters = atob(img.base64);
+      const byteArray = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArray[i] = byteCharacters.charCodeAt(i);
+      }
+
+      const { error: uploadError } = await supabase.storage
+        .from('pin-images')
+        .upload(filePath, byteArray, { upsert: true, contentType: `image/${fileExt}` });
+
+      if (uploadError) {
+        Alert.alert('Storage upload failed', uploadError.message);
+        continue;
+      }
+
+      const { data: urlData } = supabase.storage.from('pin-images').getPublicUrl(filePath);
+      const { error: insertError } = await supabase.from('pin_images').insert({ pin_id: pinId, url: urlData.publicUrl });
+      if (insertError) Alert.alert('Database insert failed', insertError.message);
+    }
+  };
+
   const handleSave = async () => {
     if (!title.trim()) {
       Alert.alert('Error', 'Please add a title for your pin.');
@@ -69,7 +120,7 @@ export default function AddPinScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { error } = await supabase.from('pins').insert({
+    const { data, error } = await supabase.from('pins').insert({
       user_id: user.id,
       title: title.trim(),
       description: description.trim(),
@@ -78,15 +129,20 @@ export default function AddPinScreen() {
       longitude: pinLocation.longitude,
       rating: rating || null,
       is_public: true,
-    });
-
-    setLoading(false);
+    }).select().single();
 
     if (error) {
+      setLoading(false);
       Alert.alert('Error', error.message);
-    } else {
-      router.back();
+      return;
     }
+
+    if (data && images.length > 0) {
+      await uploadImages(data.id, user.id);
+    }
+
+    setLoading(false);
+    router.back();
   };
 
   return (
@@ -158,6 +214,7 @@ export default function AddPinScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. Amazing coffee shop"
+            placeholderTextColor="#A0A0A0"
             value={title}
             onChangeText={setTitle}
           />
@@ -166,6 +223,7 @@ export default function AddPinScreen() {
           <TextInput
             style={styles.input}
             placeholder="e.g. Paris, France"
+            placeholderTextColor="#A0A0A0"
             value={locationName}
             onChangeText={setLocationName}
           />
@@ -174,11 +232,32 @@ export default function AddPinScreen() {
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="What did you do here? Any recommendations?"
+            placeholderTextColor="#A0A0A0"
             value={description}
             onChangeText={setDescription}
             multiline
             numberOfLines={4}
           />
+
+          <Text style={styles.label}>Photos</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoRow}>
+            {images.map((img) => (
+              <View key={img.uri} style={styles.photoThumbContainer}>
+                <Image source={{ uri: img.uri }} style={styles.photoThumb} />
+                <TouchableOpacity
+                  style={styles.photoRemove}
+                  onPress={() => handleRemoveImage(img.uri)}>
+                  <Text style={styles.photoRemoveText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            {images.length < 5 && (
+              <TouchableOpacity style={styles.photoAdd} onPress={handlePickImages}>
+                <Text style={styles.photoAddIcon}>+</Text>
+                <Text style={styles.photoAddText}>Add photo</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
 
           <Text style={styles.label}>Rating</Text>
           <View style={styles.stars}>
@@ -293,6 +372,55 @@ const styles = StyleSheet.create({
   textArea: {
     height: 120,
     textAlignVertical: 'top',
+  },
+  photoRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+  },
+  photoThumbContainer: {
+    position: 'relative',
+    marginRight: 8,
+  },
+  photoThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+  },
+  photoRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoRemoveText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  photoAdd: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  photoAddIcon: {
+    fontSize: 24,
+    color: '#2D6A4F',
+    lineHeight: 28,
+  },
+  photoAddText: {
+    fontSize: 11,
+    color: '#687076',
   },
   stars: {
     flexDirection: 'row',

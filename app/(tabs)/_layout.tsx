@@ -62,9 +62,26 @@ export default function TabLayout() {
     // third: only profile (Profile)
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: '#fff',
+        tabBarInactiveTintColor: '#888',
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarStyle: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: '#1A1A1A',
+          borderTopWidth: 0,
+          height: 84,
+          paddingBottom: 20,
+          paddingTop: 10,
+          borderTopLeftRadius: 32,
+          borderTopRightRadius: 32,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+        },
       }}>
       <Tabs.Screen
         name="index"
