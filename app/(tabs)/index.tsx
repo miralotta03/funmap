@@ -131,12 +131,17 @@ export default function MapScreen() {
           <Marker
             key={pin.id}
             coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
+            anchor={{ x: 0.5, y: 1 }}
             onPress={(e) => {
               e.stopPropagation();
               setActiveImageIndex(0);
               setSelectedPin(pin);
-            }}
-          />
+            }}>
+            <View style={markerStyles.container}>
+              <View style={markerStyles.ball} />
+              <View style={markerStyles.needle} />
+            </View>
+          </Marker>
         ))}
       </MapView>
 
@@ -241,6 +246,32 @@ export default function MapScreen() {
     </View>
   );
 }
+
+const markerStyles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  ball: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#1A1A1A',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  needle: {
+    width: 2.5,
+    height: 22,
+    backgroundColor: '#1A1A1A',
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
